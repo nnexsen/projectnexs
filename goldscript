@@ -1,14 +1,17 @@
 --[[
+	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+]]
+--[[
     VIOLENCE DISTRICT Golds Easy Hub SCRIPT v2.2 - MOBILE COMPATIBLE
     NOW SUPPORTS: Delta, KRNL, Fluxus, Arceus X, and other mobile executors
     
     FIXED ISSUES:
-    - âœ… Delta executor compatibility
-    - âœ… KRNL executor support
-    - âœ… Mobile/iOS/Android support
-    - âœ… Touch controls for mobile users
-    - âœ… Better error handling
-    - âœ… Fallback loading system
+    -  Delta executor compatibility
+    -  KRNL executor support
+    -  Mobile/iOS/Android support
+    -  Touch controls for mobile users
+    -  Better error handling
+    -  Fallback loading system
 ]]
 
 -- Mobile/Executor Detection
@@ -1120,7 +1123,7 @@ end
 
 -- Create Rayfield Window
 local Window = Rayfield:CreateWindow({
-    Name = "ðŸŽ® Golds Easy Hub - Violence District v2.2",
+    Name = "🎮 Golds Easy Hub - Violence District v2.2",
     LoadingTitle = "Loading Mobile-Compatible Script",
     LoadingSubtitle = "by goldgoldgoldblazn | " .. (isMobile and "Mobile Mode" or "PC Mode"),
     ConfigurationSaving = {
@@ -1137,22 +1140,22 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- Credits Tab (FIRST TAB - Default)
-local CreditsTab = Window:CreateTab("â„¹ï¸ Credits & Info", 4483362458)
+local CreditsTab = Window:CreateTab(" Credits & Info", 4483362458)
 
-CreditsTab:CreateSection("ðŸ‘¤ Main Developer")
+CreditsTab:CreateSection(" Main Developer")
 
 CreditsTab:CreateLabel("Created by: goldgoldgoldblazn")
 CreditsTab:CreateLabel("Version: 2.2 (Mobile Compatible)")
 CreditsTab:CreateLabel("")
-CreditsTab:CreateLabel("ðŸŒŸ Thank you for using my script!")
+CreditsTab:CreateLabel(" Thank you for using my script!")
 
-CreditsTab:CreateSection("ðŸ’¬ Discord Community")
+CreditsTab:CreateSection(" Discord Community")
 
 CreditsTab:CreateLabel("Join for updates, support & more!")
 CreditsTab:CreateLabel("Discord: discord.gg/CnNqEVFxh6")
 
 CreditsTab:CreateButton({
-    Name = "ðŸ“‹ Copy Discord Invite Link",
+    Name = " Copy Discord Invite Link",
     Callback = function()
         local inviteLink = "https://discord.gg/CnNqEVFxh6"
         
@@ -1170,31 +1173,31 @@ CreditsTab:CreateButton({
 
 if isMobile then
     CreditsTab:CreateLabel("")
-    CreditsTab:CreateLabel("ðŸ“± Mobile Tip: Link copied!")
+    CreditsTab:CreateLabel(" Mobile Tip: Link copied!")
     CreditsTab:CreateLabel("Paste in Discord app or browser")
 end
 
-CreditsTab:CreateSection("ðŸ“Š Script Information")
+CreditsTab:CreateSection(" Script Information")
 
 CreditsTab:CreateLabel("Game: Violence District")
-CreditsTab:CreateLabel("Platform: " .. (isMobile and "ðŸ“± Mobile" or "ðŸ’» PC"))
+CreditsTab:CreateLabel("Platform: " .. (isMobile and " Mobile" or " PC"))
 CreditsTab:CreateLabel("Executor: " .. executorName)
 CreditsTab:CreateLabel("UI Library: Rayfield by Sirius")
 
-CreditsTab:CreateSection("âœ¨ What's New in v2.2")
+CreditsTab:CreateSection(" What's New in v2.2")
 
 CreditsTab:CreateParagraph({
     Title = "Mobile Support Added!",
-    Content = "âœ… Delta & KRNL Support\nâœ… Touch Controls\nâœ… Better Performance\nâœ… iOS/Android Compatible\nâœ… Smart Auto-Attack\nâœ… Draggable FPS Counter\nâœ… Mobile Optimizations"
+    Content = " Delta & KRNL Support\n Touch Controls\n Better Performance\n iOS/Android Compatible\n Smart Auto-Attack\n Draggable FPS Counter\n Mobile Optimizations"
 })
 
 CreditsTab:CreateParagraph({
     Title = "All Features",
-    Content = "â€¢ Player & Object ESP\nâ€¢ Auto-Complete Generators\nâ€¢ Smart Auto Attack (Killer)\nâ€¢ Quick Leave Generator\nâ€¢ Advanced Teleportation\nâ€¢ Performance Boost (Mobile)\nâ€¢ Killer Powers\nâ€¢ Touch Controls"
+    Content = "• Player & Object ESP\n• Auto-Complete Generators\n• Smart Auto Attack (Killer)\n• Quick Leave Generator\n• Advanced Teleportation\n• Performance Boost (Mobile)\n• Killer Powers\n• Touch Controls"
 })
 
 -- ESP Tab
-local ESPTab = Window:CreateTab("ðŸ‘ï¸ ESP", 4483362458)
+local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
 ESPTab:CreateSection("Player ESP")
 
 ESPTab:CreateToggle({
@@ -1399,9 +1402,9 @@ ESPTab:CreateSlider({
 })
 
 -- Gameplay Tab
-local GameplayTab = Window:CreateTab("ðŸŽ® Gameplay", 4483362458)
+local GameplayTab = Window:CreateTab("🎮 Gameplay", 4483362458)
 -- Gameplay Tab
-local GameplayTab = Window:CreateTab("ðŸŽ® Gameplay", 4483362458)
+local GameplayTab = Window:CreateTab("🎮 Gameplay", 4483362458)
 GameplayTab:CreateSection("Auto Features")
 
 GameplayTab:CreateToggle({
@@ -1615,9 +1618,9 @@ GameplayTab:CreateButton({
 })
 
 -- Teleportation Tab
-local TeleportTab = Window:CreateTab("ðŸš€ Teleport", 4483362458)
+local TeleportTab = Window:CreateTab(" Teleport", 4483362458)
 -- Teleportation Tab
-local TeleportTab = Window:CreateTab("ðŸš€ Teleport", 4483362458)
+local TeleportTab = Window:CreateTab(" Teleport", 4483362458)
 TeleportTab:CreateSection("Generator Teleportation")
 
 TeleportTab:CreateButton({
@@ -1841,10 +1844,10 @@ TeleportTab:CreateToggle({
 })
 
 -- Settings Tab
-local SettingsTab = Window:CreateTab("âš™ï¸ Settings", 4483362458)
+local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 
 -- Settings Tab
-local SettingsTab = Window:CreateTab("âš™ï¸ Settings", 4483362458)
+local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 
 SettingsTab:CreateSection("Performance Options")
 
@@ -1978,7 +1981,7 @@ if isMobile then
         end
     })
     
-    SettingsTab:CreateSection("ðŸ“± Mobile Performance Boost")
+    SettingsTab:CreateSection("📱 Mobile Performance Boost")
     
     SettingsTab:CreateToggle({
         Name = "Auto Mobile Optimization",
@@ -1997,7 +2000,7 @@ if isMobile then
     })
     
     SettingsTab:CreateToggle({
-        Name = "ðŸ”¥ ULTRA Performance Mode (Aggressive)",
+        Name = " ULTRA Performance Mode (Aggressive)",
         CurrentValue = false,
         Flag = "AggressiveOptimization",
         Callback = function(Value)
@@ -2016,7 +2019,7 @@ if isMobile then
     })
     
     SettingsTab:CreateButton({
-        Name = "ðŸš€ Apply All Mobile Optimizations NOW",
+        Name = "🚀 Apply All Mobile Optimizations NOW",
         Callback = function()
             Config.Performance.DisableParticles = true
             Config.Performance.LowerGraphics = true
@@ -2028,7 +2031,7 @@ if isMobile then
             
             applyAggressiveMobileOptimizations()
             
-            notify("ALL OPTIMIZATIONS", "Maximum mobile performance applied! ðŸš€", 5)
+            notify("ALL OPTIMIZATIONS", "Maximum mobile performance applied! 🚀", 5)
         end
     })
     
@@ -2171,12 +2174,12 @@ print("Platform: " .. (isMobile and "Mobile" or "PC"))
 print("Executor: " .. executorName)
 print("")
 print("v2.2 Changes:")
-print("- âœ… Fixed Delta executor compatibility")
-print("- âœ… Fixed KRNL execution issues")
-print("- âœ… Added mobile/touch controls")
-print("- âœ… Better HTTP request handling")
-print("- âœ… iOS/Android support")
-print("- âœ… Performance optimizations for mobile")
-print("- âœ… Fixed notification errors")
-print("- âœ… Disabled config saving to prevent errors")
+print("- Fixed Delta executor compatibility")
+print("- Fixed KRNL execution issues")
+print("- Added mobile/touch controls")
+print("- Better HTTP request handling")
+print("- iOS/Android support")
+print("- Performance optimizations for mobile")
+print("- Fixed notification errors")
+print("- Disabled config saving to prevent errors")
 print("=========================================")
