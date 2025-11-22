@@ -1,6 +1,6 @@
 local Hook = {
     Players = {
-        ["Killer"] = {Color = Color3.fromRGB(255, 93, 108), On = true}    
+        ["Killer"] = {Color = Color3.fromRGB(0, 0, 0), On = true}    
     }
 }
 
@@ -17,8 +17,8 @@ local function ESP(obj, color)
     h.Adornee = obj
     h.FillColor = color
     h.OutlineColor = color
-    h.FillTransparency = 0
-    h.OutlineTransparency = 0.1
+    h.FillTransparency = 0.5
+    h.OutlineTransparency = 0.8
     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     h.Parent = obj
 end
