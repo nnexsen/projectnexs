@@ -17,7 +17,7 @@ local function ESP(obj, color)
     h.Adornee = obj
     h.FillColor = color
     h.OutlineColor = color
-    h.FillTransparency = 0.1
+    h.FillTransparency = 0
     h.OutlineTransparency = 0.1
     h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     h.Parent = obj
