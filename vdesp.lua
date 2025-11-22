@@ -586,97 +586,81 @@ local function isNearGenerator()
     return false, nil, nil
 end
 
--- Improved safeTeleport: resolves various target types, uses raycast to find ground,
--- disables character collisions safely and restores original states, prevents teleporting into the void.
-function safeTeleport(target, offset)
-    -- target may be a CFrame, Vector3, BasePart or Model
+-- IMPROVED safeTeleport
+-- Fixes:
+--  - Avoid running when character is missing (prevents camera getting stuck)
+--  - Restores CanCollide for all parts (including HumanoidRootPart)
+--  - Tries to find ground below target with raycast, falls back to safe Y
+--  - Resets camera subject/type after teleport to avoid stuck camera
+function safeTeleport(targetCFrame, offset)
     local hrp = getCharacterRootPart()
     if not hrp then 
-        notify("Error", "Character not found", 3)
-        return false
-    end
-
-    -- Resolve target position
-    local targetPosition
-    if typeof(target) == "CFrame" then
-        targetPosition = target.Position
-    elseif typeof(target) == "Vector3" then
-        targetPosition = target
-    elseif typeof(target) == "Instance" and target:IsA("BasePart") then
-        targetPosition = target.Position
-    elseif typeof(target) == "Instance" and target:IsA("Model") then
-        local part = target:FindFirstChildWhichIsA("BasePart")
-        if part then
-            targetPosition = part.Position
-        else
-            -- fallback: model primary part or bounding box center
-            if target.PrimaryPart and target.PrimaryPart:IsA("BasePart") then
-                targetPosition = target.PrimaryPart.Position
-            else
-                local accumulated = Vector3.new(0,0,0)
-                local count = 0
-                for _, v in ipairs(target:GetDescendants()) do
-                    if v:IsA("BasePart") then
-                        accumulated = accumulated + v.Position
-                        count = count + 1
-                    end
-                end
-                if count > 0 then
-                    targetPosition = accumulated / count
-                else
-                    targetPosition = hrp.Position
-                end
+        -- If character/humanoidrootpart doesn't exist, ensure camera is in a safe state and abort.
+        pcall(function()
+            local cam = Workspace.CurrentCamera
+            if cam then
+                cam.CameraType = Enum.CameraType.Custom
+                -- try to set CameraSubject to player humanoid when available later
             end
-        end
-    else
-        notify("Error", "Invalid teleport target type", 3)
+        end)
+        notify("Error", "Character not found - cannot teleport", 3)
         return false
     end
-
+    
     offset = offset or Vector3.new(0, Config.Teleportation.TeleportOffset, 0)
+    
+    -- resolve target position from parameter (supports CFrame or BasePart)
+    local targetPos = nil
+    if typeof(targetCFrame) == "CFrame" then
+        targetPos = targetCFrame.Position
+    elseif typeof(targetCFrame) == "Instance" and targetCFrame:IsA("BasePart") then
+        targetPos = targetCFrame.Position
+    else
+        -- fallback to hrp pos if invalid
+        targetPos = hrp.Position
+    end
 
-    -- Find a safe Y position using raycast (downwards)
+    -- raycast down to find ground
+    local rayOrigin = targetPos + Vector3.new(0, 50, 0)
+    local rayDirection = Vector3.new(0, -120, 0)
     local raycastParams = RaycastParams.new()
     raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
     raycastParams.IgnoreWater = true
 
-    local rayOrigin = targetPosition + Vector3.new(0, 50, 0)
-    local rayDirection = Vector3.new(0, -200, 0)
     local rayResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-
-    local safeY
+    local groundY
     if rayResult and rayResult.Position then
-        safeY = rayResult.Position.Y
+        groundY = rayResult.Position.Y
     else
-        -- No ground found under target - avoid void by clamping to a safe height near current Y
-        local fallbackY = math.max(targetPosition.Y, hrp.Position.Y + 5, 5)
-        safeY = fallbackY
+        -- fallback to a safe Y (above current HRP or minimal safe height)
+        groundY = math.max(targetPos.Y, hrp.Position.Y + 2, 5)
     end
 
-    local finalPos = Vector3.new(targetPosition.X, safeY + offset.Y, targetPosition.Z)
-    -- Save original CanCollide states for restoration
+    local finalPos = Vector3.new(targetPos.X, groundY + offset.Y, targetPos.Z)
+
+    -- save original CanCollide states and disable collisions for safe teleport
     local originalStates = {}
     if Config.Teleportation.SafeTeleport then
-        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                originalStates[part] = part.CanCollide
-                -- ensure non-zero sized parts are non-collidable for teleport
-                part.CanCollide = false
+        safeCall(function()
+            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    originalStates[part] = part.CanCollide
+                    part.CanCollide = false
+                end
             end
-        end
+        end)
     end
 
-    -- Teleport
+    -- perform teleport safely
     local success, err = pcall(function()
-        -- Keep player's orientation stable (face same direction as before)
-        local lookVector = hrp.CFrame.LookVector
-        hrp.CFrame = CFrame.new(finalPos, finalPos + lookVector)
+        local lookVec = hrp.CFrame.LookVector
+        hrp.CFrame = CFrame.new(finalPos, finalPos + lookVec)
     end)
 
-    -- Restore collision states after a small delay (ensure we still have character)
+    -- restore collisions (including HumanoidRootPart) after a short delay
     if Config.Teleportation.SafeTeleport then
-        task.delay(0.5, function()
+        task.delay(0.45, function()
             safeCall(function()
                 for part, state in pairs(originalStates) do
                     if validateInstance(part) and part:IsA("BasePart") then
@@ -687,6 +671,20 @@ function safeTeleport(target, offset)
         end)
     end
 
+    -- Ensure camera is set back to player (sometimes teleport can leave camera detached)
+    safeCall(function()
+        local cam = Workspace.CurrentCamera
+        if cam then
+            cam.CameraType = Enum.CameraType.Custom
+            if LocalPlayer.Character then
+                local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    cam.CameraSubject = humanoid
+                end
+            end
+        end
+    end)
+
     if not success then
         notify("Teleport Failed", tostring(err), 3)
         return false
@@ -695,10 +693,17 @@ function safeTeleport(target, offset)
     return true
 end
 
--- leaveGenerator: improved zero-length direction handling and safer target selection
+-- IMPROVED leaveGenerator
+-- Fixes:
+--  - Avoids .Unit on near-zero vectors (prevents invalid direction)
+--  - Uses horizontal-only direction to escape generators
+--  - Falls back to map-center/random direction when player overlaps generator
 function leaveGenerator()
     local hrp = getCharacterRootPart()
-    if not hrp then return false end
+    if not hrp then 
+        notify("Error", "Character not found - cannot leave generator", 2)
+        return false
+    end
     
     local isNear, nearestGen, distance = isNearGenerator()
     if not isNear or not nearestGen then
@@ -712,16 +717,15 @@ function leaveGenerator()
         return false
     end
 
-    local directionVec = hrp.Position - genPart.Position
-    -- Ignore vertical component - move horizontally away
-    directionVec = Vector3.new(directionVec.X, 0, directionVec.Z)
-    if directionVec.Magnitude < 0.5 then
-        -- If you're basically overlapping the generator, pick a safe default direction (away from map center or random)
-        -- Try away from map center if possible, else random horizontal
+    -- compute horizontal-only direction away from generator
+    local direction = hrp.Position - genPart.Position
+    direction = Vector3.new(direction.X, 0, direction.Z)
+
+    -- handle near-zero direction (e.g. overlapping)
+    if direction.Magnitude < 0.5 then
         local map = Workspace:FindFirstChild("Map")
         local mapCenter = Vector3.new(0, hrp.Position.Y, 0)
         if map and map:IsA("Model") then
-            -- compute average of map bounds if possible
             local acc = Vector3.new(0,0,0)
             local c = 0
             for _, v in ipairs(map:GetDescendants()) do
@@ -731,30 +735,30 @@ function leaveGenerator()
                 end
             end
             if c > 0 then
-                mapCenter = acc / c
-                mapCenter = Vector3.new(mapCenter.X, hrp.Position.Y, mapCenter.Z)
+                mapCenter = Vector3.new((acc / c).X, hrp.Position.Y, (acc / c).Z)
             end
         end
-        directionVec = (hrp.Position - mapCenter)
-        directionVec = Vector3.new(directionVec.X, 0, directionVec.Z)
-        if directionVec.Magnitude < 0.5 then
-            directionVec = Vector3.new(math.random()-0.5, 0, math.random()-0.5)
+        direction = hrp.Position - mapCenter
+        direction = Vector3.new(direction.X, 0, direction.Z)
+        if direction.Magnitude < 0.5 then
+            direction = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5)
         end
     end
 
-    local unitDir = directionVec.Unit
+    local unitDir = direction.Unit
     local escapeDistance = Config.AutoFeatures.LeaveDistance + 15
-    local escapeTarget = hrp.Position + (unitDir * escapeDistance)
+    local escapePosition = hrp.Position + (unitDir * escapeDistance)
+    local escapeCFrame = CFrame.new(escapePosition, escapePosition + hrp.CFrame.LookVector)
 
-    -- Use a small vertical offset to avoid teleporting into the ground
-    local offset = Vector3.new(0, Config.Teleportation.TeleportOffset + 1, 0)
-    if safeTeleport(escapeTarget, offset) then
+    -- attempt teleport slightly above ground to avoid embedding in floor
+    if safeTeleport(escapeCFrame, Vector3.new(0, Config.Teleportation.TeleportOffset + 1, 0)) then
         notify("Escaped!", string.format("Moved %.0f studs away", escapeDistance), 2)
         return true
     else
-        -- As fallback, attempt to teleport directly away from generator part position
-        local fallbackTarget = genPart.Position + (unitDir * (escapeDistance + 5))
-        if safeTeleport(fallbackTarget, offset) then
+        -- fallback: try teleporting further away from generator center
+        local fallbackPos = genPart.Position + (unitDir * (escapeDistance + 5))
+        local fallbackCFrame = CFrame.new(fallbackPos, fallbackPos + hrp.CFrame.LookVector)
+        if safeTeleport(fallbackCFrame, Vector3.new(0, Config.Teleportation.TeleportOffset + 1, 0)) then
             notify("Escaped (Fallback)!", string.format("Moved %.0f studs away", escapeDistance + 5), 2)
             return true
         end
@@ -764,7 +768,6 @@ function leaveGenerator()
     return false
 end
 
--- Auto Leave generator input listener
 local function startAutoLeaveGenerator()
     if LeaveGeneratorConnection then return end
     
@@ -898,6 +901,42 @@ function getGeneratorsByDistance()
     end)
     
     return generators
+end
+
+function safeTeleport(targetCFrame, offset)
+    local hrp = getCharacterRootPart()
+    if not hrp then 
+        notify("Error", "Character not found", 3)
+        return false
+    end
+    
+    offset = offset or Vector3.new(0, Config.Teleportation.TeleportOffset, 0)
+    
+    if Config.Teleportation.SafeTeleport then
+        safeCall(function()
+            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end)
+    end
+    
+    hrp.CFrame = targetCFrame + offset
+    
+    if Config.Teleportation.SafeTeleport then
+        task.delay(0.5, function()
+            safeCall(function()
+                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        part.CanCollide = true
+                    end
+                end
+            end)
+        end)
+    end
+    
+    return true
 end
 
 -- ESP Functions
@@ -1764,7 +1803,7 @@ TeleportTab:CreateButton({
         local generators = getGeneratorsByDistance()
         
         if #generators == 0 then
-            notify("Not Found", "No generators found", 3)
+            notify("Not Found", "No generators found on the map", 3)
             return
         end
         
