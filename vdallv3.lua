@@ -54,16 +54,285 @@ local loadSuccess, loadError = pcall(function()
     Rayfield = loadstring(safeHttpGet('https://sirius.menu/rayfield'))()
 end)
 
-if not loadSuccess then
-    warn("Failed to load Rayfield from sirius.menu, trying backup...")
-    
+if not loadSuccess or not Rayfield then
+    warn("Failed to load Rayfield from sirius.menu, trying backup or using fallback UI...")
+
     -- Fallback: Try alternative Rayfield source
-    pcall(function()
-        Rayfield = loadstring(safeHttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))()
+    local ok, alt = pcall(function()
+        return loadstring(safeHttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))()
     end)
-    
-    if not Rayfield then
-        error("CRITICAL: Could not load Rayfield UI Library. Please check your internet connection or executor compatibility.")
+
+    if ok and alt then
+        Rayfield = alt
+    end
+end
+
+-- If Rayfield still nil, create a very small fallback UI library so script continues and a menu appears.
+if not Rayfield then
+    warn("Rayfield UI could not be loaded. Using lightweight fallback UI (basic functionality).")
+
+    local function makeText(parent, text, size, bold)
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -12, 0, size or 18)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = text or ""
+        lbl.TextColor3 = Color3.fromRGB(225,225,225)
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = (bold and (size or 18)) or (size and size - 2 or 16)
+        lbl.TextWrapped = true
+        lbl.Parent = parent
+        return lbl
+    end
+
+    local function makeButton(parent, name, callback)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -12, 0, 28)
+        btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+        btn.TextColor3 = Color3.fromRGB(240,240,240)
+        btn.Text = name or "Button"
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 16
+        btn.Parent = parent
+        btn.MouseButton1Click:Connect(function()
+            pcall(callback)
+        end)
+        return btn
+    end
+
+    local function makeToggle(parent, name, initial, callback)
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(1, -12, 0, 28)
+        frame.BackgroundTransparency = 1
+        frame.Parent = parent
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.75, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = name
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextSize = 16
+        lbl.TextColor3 = Color3.fromRGB(220,220,220)
+        lbl.Parent = frame
+
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.25, -4, 1, 0)
+        btn.Position = UDim2.new(0.75, 4, 0, 0)
+        btn.BackgroundColor3 = initial and Color3.fromRGB(80,180,80) or Color3.fromRGB(150,50,50)
+        btn.Text = initial and "ON" or "OFF"
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 14
+        btn.Parent = frame
+
+        btn.MouseButton1Click:Connect(function()
+            local new = not (btn.Text == "ON")
+            if new then
+                btn.Text = "ON"
+                btn.BackgroundColor3 = Color3.fromRGB(80,180,80)
+            else
+                btn.Text = "OFF"
+                btn.BackgroundColor3 = Color3.fromRGB(150,50,50)
+            end
+            pcall(callback, new)
+        end)
+
+        return frame, btn
+    end
+
+    -- Minimal Rayfield-like API (very small subset used by script)
+    Rayfield = {}
+    function Rayfield:CreateWindow(opts)
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "VD_FallbackUI"
+        screenGui.ResetOnSpawn = false
+        screenGui.Parent = LocalPlayer:FindFirstChild("PlayerGui") or nil
+
+        local main = Instance.new("Frame")
+        main.Size = UDim2.new(0, 420, 0, 520)
+        main.Position = UDim2.new(0.5, -210, 0.5, -260)
+        main.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        main.BorderSizePixel = 0
+        main.Parent = screenGui
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, 0, 0, 34)
+        title.BackgroundTransparency = 1
+        title.Text = opts.Name or "VD Fallback"
+        title.Font = Enum.Font.GothamBold
+        title.TextSize = 18
+        title.TextColor3 = Color3.fromRGB(245,245,245)
+        title.Parent = main
+
+        local content = Instance.new("ScrollingFrame")
+        content.Size = UDim2.new(1, -12, 1, -48)
+        content.Position = UDim2.new(0, 6, 0, 40)
+        content.BackgroundTransparency = 1
+        content.CanvasSize = UDim2.new(0,0,0,0)
+        content.Parent = main
+
+        local layout = Instance.new("UIListLayout")
+        layout.Parent = content
+        layout.Padding = UDim.new(0,6)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+
+        local window = {}
+
+        function window:CreateTab(name, icon)
+            -- for fallback, tabs are just sections appended sequentially
+            local tabFrame = Instance.new("Frame")
+            tabFrame.Size = UDim2.new(1, 0, 0, 0)
+            tabFrame.BackgroundTransparency = 1
+            tabFrame.Parent = content
+
+            local tabLayout = Instance.new("UIListLayout")
+            tabLayout.Parent = tabFrame
+            tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            tabLayout.Padding = UDim.new(0,6)
+
+            local function addSectionLabel(text)
+                local sec = Instance.new("TextLabel")
+                sec.Size = UDim2.new(1, -12, 0, 22)
+                sec.BackgroundTransparency = 1
+                sec.Font = Enum.Font.GothamBold
+                sec.TextSize = 16
+                sec.TextColor3 = Color3.fromRGB(220,220,220)
+                sec.Text = text
+                sec.Parent = tabFrame
+                return sec
+            end
+
+            local tab = {}
+
+            function tab:CreateSection(title)
+                addSectionLabel(title)
+            end
+
+            function tab:CreateLabel(text)
+                makeText(tabFrame, text, 16, false)
+            end
+
+            function tab:CreateParagraph(opts)
+                makeText(tabFrame, (opts.Title and (opts.Title.."\n") or "") .. (opts.Content or ""), 18, false)
+            end
+
+            function tab:CreateButton(opts)
+                makeButton(tabFrame, opts.Name or "Button", opts.Callback)
+            end
+
+            function tab:CreateToggle(opts)
+                local _, btn = makeToggle(tabFrame, opts.Name or "Toggle", opts.CurrentValue or false, function(new)
+                    if opts.Callback then opts.Callback(new) end
+                end)
+                return btn
+            end
+
+            function tab:CreateSlider(opts)
+                -- fallback: create label and two buttons to +/-; call Callback with integer value within range
+                local frame = Instance.new("Frame")
+                frame.Size = UDim2.new(1, -12, 0, 28)
+                frame.BackgroundTransparency = 1
+                frame.Parent = tabFrame
+
+                local lbl = Instance.new("TextLabel")
+                lbl.Size = UDim2.new(0.6, 0, 1, 0)
+                lbl.BackgroundTransparency = 1
+                lbl.Text = opts.Name or "Slider"
+                lbl.Font = Enum.Font.Gotham
+                lbl.TextSize = 14
+                lbl.TextColor3 = Color3.fromRGB(220,220,220)
+                lbl.Parent = frame
+
+                local value = math.floor(opts.CurrentValue or ((opts.Range and opts.Range[1]) or 0))
+                local valLbl = Instance.new("TextLabel")
+                valLbl.Size = UDim2.new(0.2, 0, 1, 0)
+                valLbl.Position = UDim2.new(0.6, 4, 0, 0)
+                valLbl.BackgroundTransparency = 1
+                valLbl.Text = tostring(value)
+                valLbl.Font = Enum.Font.GothamBold
+                valLbl.TextSize = 14
+                valLbl.TextColor3 = Color3.fromRGB(200,200,200)
+                valLbl.Parent = frame
+
+                local plus = Instance.new("TextButton")
+                plus.Size = UDim2.new(0.1, -4, 1, 0)
+                plus.Position = UDim2.new(0.8, 4, 0, 0)
+                plus.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                plus.Text = "+"
+                plus.Font = Enum.Font.GothamBold
+                plus.TextSize = 14
+                plus.Parent = frame
+
+                local minus = Instance.new("TextButton")
+                minus.Size = UDim2.new(0.1, -4, 1, 0)
+                minus.Position = UDim2.new(0.9, 4, 0, 0)
+                minus.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                minus.Text = "-"
+                minus.Font = Enum.Font.GothamBold
+                minus.TextSize = 14
+                minus.Parent = frame
+
+                local function setValue(v)
+                    value = math.clamp(math.floor(v), opts.Range[1] or 0, opts.Range[2] or v)
+                    valLbl.Text = tostring(value)
+                    if opts.Callback then pcall(opts.Callback, value) end
+                end
+
+                plus.MouseButton1Click:Connect(function()
+                    setValue(value + (opts.Increment or 1))
+                end)
+                minus.MouseButton1Click:Connect(function()
+                    setValue(value - (opts.Increment or 1))
+                end)
+            end
+
+            function tab:CreateDropdown(opts)
+                -- simple dropdown: show current and cycle options on click
+                local frame = Instance.new("Frame")
+                frame.Size = UDim2.new(1, -12, 0, 28)
+                frame.BackgroundTransparency = 1
+                frame.Parent = tabFrame
+
+                local lbl = Instance.new("TextLabel")
+                lbl.Size = UDim2.new(0.6, 0, 1, 0)
+                lbl.BackgroundTransparency = 1
+                lbl.Text = opts.Name or "Dropdown"
+                lbl.Font = Enum.Font.Gotham
+                lbl.TextSize = 14
+                lbl.TextColor3 = Color3.fromRGB(220,220,220)
+                lbl.Parent = frame
+
+                local cur = opts.CurrentOption or (opts.Options and opts.Options[1]) or ""
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(0.4, -4, 1, 0)
+                btn.Position = UDim2.new(0.6, 4, 0, 0)
+                btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                btn.Text = tostring(cur)
+                btn.Font = Enum.Font.GothamBold
+                btn.TextSize = 14
+                btn.Parent = frame
+
+                local idx = 1
+                for i,v in ipairs(opts.Options or {}) do
+                    if v == cur then idx = i break end
+                end
+
+                btn.MouseButton1Click:Connect(function()
+                    idx = idx + 1
+                    if idx > # (opts.Options or {}) then idx = 1 end
+                    btn.Text = opts.Options[idx]
+                    if opts.Callback then pcall(opts.Callback, opts.Options[idx]) end
+                end)
+            end
+
+            return tab
+        end
+
+        -- very small API compatibility
+        local wrapper = {}
+        wrapper.CreateTab = function(self, name, icon) return window:CreateTab(name, icon) end
+        -- keep original ScreenGui for later cleanup if needed
+        wrapper._Gui = screenGui
+        wrapper._Main = main
+        return wrapper
     end
 end
 
@@ -75,7 +344,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
--- Configuration
+-- Configuration (unchanged)
 local Config = {
     ESP = {
         Killer = false,
@@ -114,7 +383,6 @@ local Config = {
         DisableShadows = false,
         ReduceRenderDistance = false
     },
-    -- New Root Lock config: when Enabled, HumanoidRootPart will be kept at captured CFrame
     RootLock = {
         Enabled = false,
         LockedCFrame = nil
