@@ -1,6 +1,6 @@
 local Hook = {
     Players = {
-        ["Killer"] = {Color = Color3.fromRGB(0, 0, 0), On = true}    
+        ["Killer"] = {Color = Color3.fromRGB(255, 0, 0), On = true}    
     }
 }
 
