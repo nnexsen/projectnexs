@@ -361,6 +361,15 @@ local UpdateConnection = nil
 local WalkConnection = nil
 local WalkSpeed = 25 -- studs per second (10..50)
 
+-- FOV & Camera
+local OriginalCameraFOV = nil
+local FOVTarget = nil
+local FOVSmoothness = 0.25 -- (0.05..1.0) higher = faster interpolation
+local FOVConnection = nil
+
+-- Checkpoints
+local Checkpoints = { nil, nil } -- CFrame or nil
+
 -- We store original humanoid properties to restore on disable
 local SavedWalkSpeed = nil
 local SavedAutoRotate = nil
@@ -524,11 +533,11 @@ if not UpdateConnection then
     UpdateConnection = RunService.Heartbeat:Connect(updateAllESP)
 end
 
--- Create Rayfield Window
+-- Create Rayfield Window (title changed to NEXTHUB BY NNEXT; subtitle by Nnext)
 local Window = Rayfield:CreateWindow({
-    Name = "🎮 Golds Easy Hub - Violence District v2.2",
+    Name = "NEXTHUB BY NNEXT",
     LoadingTitle = "Loading Script",
-    LoadingSubtitle = "by goldgoldgoldblazn",
+    LoadingSubtitle = "by Nnext",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = nil,
@@ -592,7 +601,25 @@ ESPTab:CreateSlider({
     end
 })
 
--- Gameplay Tab (reduced)
+-- Move Clear/Refresh ESP controls into ESP tab
+ESPTab:CreateButton({
+    Name = "Clear All ESP",
+    Callback = function()
+        clearAllHighlights()
+        notify("Cleared", "All ESP cleared", 2)
+    end
+})
+
+ESPTab:CreateButton({
+    Name = "Refresh ESP",
+    Callback = function()
+        clearAllHighlights()
+        updateAllESP()
+        notify("Refreshed", "ESP refreshed", 2)
+    end
+})
+
+-- Gameplay Tab (contains Walk (CFrame) and Checkpoint Teleport features)
 local GameplayTab = Window:CreateTab("🎮 Gameplay", 4483362458)
 GameplayTab:CreateSection("Auto Features")
 
@@ -760,32 +787,25 @@ GameplayTab:CreateButton({
     end
 })
 
--- Settings Tab (trimmed)
-local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
-
--- Movement Section: Walk CFrame
-SettingsTab:CreateSection("Movement")
+-- Movement Section (moved to Gameplay): Walk CFrame
+GameplayTab:CreateSection("Movement")
 
 -- Helper to apply running/idle state to humanoid while WalkCFrame is enabled.
 local function applyWalkState(humanoid, isMoving)
     if not validateInstance(humanoid) then return end
-    -- If moving, set humanoid WalkSpeed so animations and server-side state may pick it up.
-    -- If idle, set WalkSpeed to 0 so default movement doesn't happen; we still try to force running state.
     pcall(function()
         if isMoving then
             humanoid.WalkSpeed = math.clamp(WalkSpeed or 25, 10, 50)
             humanoid:ChangeState(Enum.HumanoidStateType.Running)
         else
             humanoid.WalkSpeed = 0
-            -- try to keep running animation/state when idle (may not always animate)
             humanoid:ChangeState(Enum.HumanoidStateType.Running)
         end
-        -- disable AutoRotate while we control HRP orientation
         humanoid.AutoRotate = false
     end)
 end
 
-SettingsTab:CreateToggle({
+GameplayTab:CreateToggle({
     Name = "Walk (CFrame Forward)",
     CurrentValue = false,
     Flag = "WalkCFrame",
@@ -794,10 +814,8 @@ SettingsTab:CreateToggle({
             if WalkConnection then return end
 
             local function onCharacterAdded(char)
-                -- restore previous saved values if not set, then apply immediate idle running state
                 local humanoid = char and char:FindFirstChildOfClass("Humanoid")
                 if humanoid then
-                    -- save original properties first time
                     if SavedWalkSpeed == nil then
                         SavedWalkSpeed = humanoid.WalkSpeed
                     end
@@ -808,10 +826,8 @@ SettingsTab:CreateToggle({
                 end
             end
 
-            -- connect to CharacterAdded to reapply settings on respawn
             if CharacterAddedConn then CharacterAddedConn:Disconnect() CharacterAddedConn = nil end
             CharacterAddedConn = LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
-            -- if character already exists, apply immediately
             onCharacterAdded(LocalPlayer.Character)
 
             WalkConnection = RunService.Heartbeat:Connect(function(dt)
@@ -863,12 +879,10 @@ SettingsTab:CreateToggle({
                 pcall(function()
                     if SavedWalkSpeed ~= nil then humanoid.WalkSpeed = SavedWalkSpeed end
                     if SavedAutoRotate ~= nil then humanoid.AutoRotate = SavedAutoRotate end
-                    -- try to reset state to getting up/land (let engine pick correct state)
                     humanoid:ChangeState(Enum.HumanoidStateType.Landed)
                 end)
             end
 
-            -- clear saved values
             SavedWalkSpeed = nil
             SavedAutoRotate = nil
 
@@ -877,7 +891,7 @@ SettingsTab:CreateToggle({
     end
 })
 
-SettingsTab:CreateSlider({
+GameplayTab:CreateSlider({
     Name = "Walk Speed (studs/sec)",
     Range = {10, 50},
     Increment = 1,
@@ -888,24 +902,143 @@ SettingsTab:CreateSlider({
     end
 })
 
+-- Teleport Checkpoints
+GameplayTab:CreateSection("Teleport - Checkpoints")
+
+-- Checkpoint 1
+GameplayTab:CreateParagraph({Title = "Checkpoint 1", Content = ""})
+GameplayTab:CreateButton({
+    Name = "SAVE Checkpoint 1",
+    Callback = function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            notify("Checkpoint 1", "No HumanoidRootPart found to save", 2)
+            return
+        end
+        Checkpoints[1] = hrp.CFrame
+        notify("Checkpoint 1", "Saved current position", 2)
+    end
+})
+GameplayTab:CreateButton({
+    Name = "LOAD Checkpoint 1",
+    Callback = function()
+        local cf = Checkpoints[1]
+        if not cf then
+            notify("Checkpoint 1", "No saved position. Use SAVE first.", 2)
+            return
+        end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            notify("Checkpoint 1", "No HumanoidRootPart found to teleport", 2)
+            return
+        end
+        pcall(function()
+            hrp.CFrame = cf
+        end)
+        notify("Checkpoint 1", "Loaded saved position", 2)
+    end
+})
+
+-- Checkpoint 2
+GameplayTab:CreateParagraph({Title = "Checkpoint 2", Content = ""})
+GameplayTab:CreateButton({
+    Name = "SAVE Checkpoint 2",
+    Callback = function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            notify("Checkpoint 2", "No HumanoidRootPart found to save", 2)
+            return
+        end
+        Checkpoints[2] = hrp.CFrame
+        notify("Checkpoint 2", "Saved current position", 2)
+    end
+})
+GameplayTab:CreateButton({
+    Name = "LOAD Checkpoint 2",
+    Callback = function()
+        local cf = Checkpoints[2]
+        if not cf then
+            notify("Checkpoint 2", "No saved position. Use SAVE first.", 2)
+            return
+        end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            notify("Checkpoint 2", "No HumanoidRootPart found to teleport", 2)
+            return
+        end
+        pcall(function()
+            hrp.CFrame = cf
+        end)
+        notify("Checkpoint 2", "Loaded saved position", 2)
+    end
+})
+
+-- Settings Tab (trimmed) - keep Unload Script and Camera settings
+local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
+
+-- Camera / FOV Section
+SettingsTab:CreateSection("Camera")
+
+-- Save original camera FOV
+OriginalCameraFOV = (Workspace.CurrentCamera and Workspace.CurrentCamera.FieldOfView) or 70
+FOVTarget = OriginalCameraFOV or 70
+FOVSmoothness = 0.25
+
+-- Start FOV smoothing connection
+local function startFOVConnection()
+    if FOVConnection then return end
+    FOVConnection = RunService.RenderStepped:Connect(function(dt)
+        local cam = Workspace.CurrentCamera
+        if not cam then return end
+        local current = cam.FieldOfView
+        local target = FOVTarget or current
+        if math.abs(current - target) < 0.01 then
+            cam.FieldOfView = target
+            return
+        end
+        -- Interpolate: higher FOVSmoothness -> faster interpolation
+        local alpha = math.clamp(FOVSmoothness * dt * 6, 0, 1)
+        cam.FieldOfView = current + (target - current) * alpha
+    end)
+end
+
+local function stopFOVConnection()
+    if FOVConnection then
+        FOVConnection:Disconnect()
+        FOVConnection = nil
+    end
+end
+
+SettingsTab:CreateSlider({
+    Name = "Field of View (70-110)",
+    Range = {70, 110},
+    Increment = 1,
+    CurrentValue = FOVTarget,
+    Flag = "FOV",
+    Callback = function(Value)
+        FOVTarget = math.clamp(Value or 70, 70, 110)
+        startFOVConnection()
+    end
+})
+
+SettingsTab:CreateSlider({
+    Name = "FOV Smoothness (higher = faster)",
+    Range = {0.05, 1.0},
+    Increment = 0.05,
+    CurrentValue = FOVSmoothness,
+    Flag = "FOVSmooth",
+    Callback = function(Value)
+        FOVSmoothness = math.clamp(Value or 0.25, 0.05, 1.0)
+        startFOVConnection()
+    end
+})
+
+-- Script Controls: leave only Unload Script here
 SettingsTab:CreateSection("Script Controls")
-
-SettingsTab:CreateButton({
-    Name = "Clear All ESP",
-    Callback = function()
-        clearAllHighlights()
-        notify("Cleared", "All ESP cleared", 2)
-    end
-})
-
-SettingsTab:CreateButton({
-    Name = "Refresh ESP",
-    Callback = function()
-        clearAllHighlights()
-        updateAllESP()
-        notify("Refreshed", "ESP refreshed", 2)
-    end
-})
 
 SettingsTab:CreateButton({
     Name = "Unload Script",
@@ -937,6 +1070,15 @@ SettingsTab:CreateButton({
         SavedWalkSpeed = nil
         SavedAutoRotate = nil
 
+        -- restore camera FOV and stop smoothing
+        pcall(function()
+            local cam = Workspace.CurrentCamera
+            if cam and OriginalCameraFOV then
+                cam.FieldOfView = OriginalCameraFOV
+            end
+        end)
+        stopFOVConnection()
+
         -- Rayfield fallback: destroy UI if possible
         pcall(function()
             if Rayfield and Rayfield.Destroy then
@@ -952,4 +1094,4 @@ SettingsTab:CreateButton({
 })
 
 -- Final Notification
-notify("Script Loaded!", "Violence District v2.2 (modified) loaded", 4)
+notify("Script Loaded!", "NEXTHUB BY NNEXT - Violence District v2.2 (modified) loaded", 4)
