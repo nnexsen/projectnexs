@@ -359,7 +359,7 @@ local UpdateConnection = nil
 
 -- Movement (Walk CFrame)
 local WalkConnection = nil
-local WalkSpeed = 5 -- studs per second (1..10)
+local WalkSpeed = 25 -- studs per second (10..50)
 
 -- Helper Functions
 local function notify(title, content, duration)
@@ -768,22 +768,34 @@ SettingsTab:CreateToggle({
     Callback = function(Value)
         if Value then
             if WalkConnection then return end
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if not hrp then
-                notify("Walk", "No character HumanoidRootPart found", 2)
-                return
-            end
+
             WalkConnection = RunService.Heartbeat:Connect(function(dt)
-                local curHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if not curHRP then return end
-                local speed = math.clamp(WalkSpeed or 5, 1, 10)
-                local forward = curHRP.CFrame.LookVector
-                local displacement = forward * (speed * dt)
+                local char = LocalPlayer.Character
+                local curHRP = char and char:FindFirstChild("HumanoidRootPart")
+                local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+
+                if not curHRP or not humanoid then return end
+
+                -- Use Humanoid.MoveDirection so movement only occurs when player provides input
+                local moveDir = humanoid.MoveDirection or Vector3.new(0,0,0)
+                -- Flatten to XZ plane (no vertical movement)
+                local moveXZ = Vector3.new(moveDir.X, 0, moveDir.Z)
+                if moveXZ.Magnitude <= 0.01 then
+                    -- no input -> remain stationary
+                    return
+                end
+
+                local speed = math.clamp(WalkSpeed or 25, 10, 50)
+                local dir = moveXZ.Unit
+                local displacement = dir * (speed * dt)
+
                 safeCall(function()
-                    curHRP.CFrame = curHRP.CFrame + displacement
+                    local targetPos = curHRP.Position + displacement
+                    -- set CFrame while preserving orientation towards movement direction
+                    curHRP.CFrame = CFrame.new(targetPos, targetPos + dir)
                 end)
             end)
-            notify("Walk", "Walk (CFrame) enabled", 2)
+            notify("Walk", "Walk (CFrame) enabled — press movement keys or use joystick to move", 3)
         else
             if WalkConnection then
                 WalkConnection:Disconnect()
@@ -796,12 +808,12 @@ SettingsTab:CreateToggle({
 
 SettingsTab:CreateSlider({
     Name = "Walk Speed (studs/sec)",
-    Range = {1, 10},
+    Range = {10, 50},
     Increment = 1,
     CurrentValue = WalkSpeed,
     Flag = "WalkSpeed",
     Callback = function(Value)
-        WalkSpeed = math.clamp(Value or 5, 1, 10)
+        WalkSpeed = math.clamp(Value or 25, 10, 50)
     end
 })
 
