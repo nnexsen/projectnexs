@@ -1,4 +1,3 @@
-
 -- Safe HTTP Get with fallbacks
 local function safeHttpGet(url)
     local success, result
@@ -349,13 +348,7 @@ local Config = {
         MaxDistance = 500
     },
     AutoFeatures = {
-        AutoGenerator = false,
-        GeneratorMode = "great",
         SkillCheck = false
-    },
-    RootLock = {
-        Enabled = false,
-        LockedCFrame = nil
     }
 }
 
@@ -363,8 +356,10 @@ local Config = {
 local Highlights = {}            -- mapping Instance -> Highlight
 local LastUpdate = 0
 local UpdateConnection = nil
-local AutoGeneratorThread = nil
-local RootLockConnection = nil
+
+-- Movement (Walk CFrame)
+local WalkConnection = nil
+local WalkSpeed = 5 -- studs per second (1..10)
 
 -- Helper Functions
 local function notify(title, content, duration)
@@ -402,7 +397,6 @@ local function isSurvivor()
     return LocalPlayer.Team and LocalPlayer.Team.Name == "Survivors"
 end
 
--- Removed performance, teleportation, auto-leave, auto-attack, billboard label, and FPS counter related functions per request.
 -- The following helper will create/destroy Highlight instances directly (inline usage only).
 
 local function ensureHighlightOnInstance(inst, color)
@@ -543,51 +537,6 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false
 })
 
--- Credits Tab (FIRST TAB - Default)
-local CreditsTab = Window:CreateTab(" Credits & Info", 4483362458)
-
-CreditsTab:CreateSection(" Main Developer")
-
-CreditsTab:CreateLabel("Created by: goldgoldgoldblazn")
-CreditsTab:CreateLabel("Version: 2.2")
-CreditsTab:CreateLabel("")
-CreditsTab:CreateLabel(" Thank you for using my script!")
-
-CreditsTab:CreateSection(" Discord Community")
-
-CreditsTab:CreateLabel("Join for updates, support & more!")
-CreditsTab:CreateLabel("Discord: discord.gg/CnNqEVFxh6")
-
-CreditsTab:CreateButton({
-    Name = " Copy Discord Invite Link",
-    Callback = function()
-        local inviteLink = "https://discord.gg/CnNqEVFxh6"
-        
-        local success = pcall(function()
-            setclipboard(inviteLink)
-        end)
-        
-        if success then
-            notify("Discord Link Copied!", "discord.gg/CnNqEVFxh6 copied to clipboard!", 4)
-        else
-            notify("Discord Server", "discord.gg/CnNqEVFxh6 - Copy this manually!", 5)
-        end
-    end
-})
-
-CreditsTab:CreateSection(" Script Information")
-
-CreditsTab:CreateLabel("Game: Violence District")
-CreditsTab:CreateLabel("Executor: " .. executorName)
-CreditsTab:CreateLabel("UI Library: Rayfield by Sirius")
-
-CreditsTab:CreateSection(" What's New in v2.2")
-
-CreditsTab:CreateParagraph({
-    Title = "Changes",
-    Content = "Mobile components removed. Added Root Lock option (keeps your HumanoidRootPart at a fixed position)."
-})
-
 -- ESP Tab (streamlined: only Player ESP and Generator ESP remain; labels removed)
 local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
 ESPTab:CreateSection("Player ESP")
@@ -627,9 +576,6 @@ ESPTab:CreateToggle({
 
 ESPTab:CreateSection("Settings")
 
--- Show Distance (removed label UI, so this toggle won't have visible effect; kept for compatibility but disabled)
--- Removed Update Rate and Max ESP Objects sliders per request to remove Performance / graphics controls.
-
 ESPTab:CreateSlider({
     Name = "Max Distance (used for culling highlights)",
     Range = {100, 1000},
@@ -644,79 +590,6 @@ ESPTab:CreateSlider({
 -- Gameplay Tab (reduced)
 local GameplayTab = Window:CreateTab("🎮 Gameplay", 4483362458)
 GameplayTab:CreateSection("Auto Features")
-
-GameplayTab:CreateToggle({
-    Name = "Auto Complete Generators",
-    CurrentValue = false,
-    Flag = "AutoGenerator",
-    Callback = function(Value)
-        Config.AutoFeatures.AutoGenerator = Value
-        if Value then
-            notify("Auto Generator", "Enabled - Generators will auto-complete", 3)
-        else
-            notify("Auto Generator", "Disabled", 2)
-        end
-    end
-})
-
-GameplayTab:CreateDropdown({
-    Name = "Generator Mode",
-    Options = {"Great (Fast)", "Normal (Slow)"},
-    CurrentOption = "Great (Fast)",
-    Flag = "GeneratorMode",
-    Callback = function(Option)
-        if Option == "Great (Fast)" then
-            Config.AutoFeatures.GeneratorMode = "great"
-        else
-            Config.AutoFeatures.GeneratorMode = "normal"
-        end
-    end
-})
-
--- Gameplay Tab continued: Killer Powers
-
-GameplayTab:CreateSection("Killer Powers")
-
-GameplayTab:CreateButton({
-    Name = "Activate Killer Power",
-    Callback = function()
-        safeCall(function()
-            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-            if remotes then
-                local killerRemotes = remotes:FindFirstChild("Killers")
-                if killerRemotes then
-                    local killerFolder = killerRemotes:FindFirstChild("Killer")
-                    if killerFolder then
-                        local activatePower = killerFolder:FindFirstChild("ActivatePower")
-                        if activatePower then
-                            activatePower:FireServer()
-                            notify("Power Activated", "Killer power triggered", 2)
-                        end
-                    end
-                end
-            end
-        end)
-    end
-})
-
-GameplayTab:CreateButton({
-    Name = "Basic Attack (Killer)",
-    Callback = function()
-        safeCall(function()
-            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-            if remotes then
-                local attacks = remotes:FindFirstChild("Attacks")
-                if attacks then
-                    local basicAttack = attacks:FindFirstChild("BasicAttack")
-                    if basicAttack then
-                        basicAttack:FireServer(false)
-                        notify("Attack", "Basic attack executed", 2)
-                    end
-                end
-            end
-        end)
-    end
-})
 
 -- Skill Check Automation Implementation (inserted from user)
 -- This implementation will be enabled/disabled via the Gameplay tab toggle "Auto Skill Check"
@@ -837,59 +710,98 @@ GameplayTab:CreateToggle({
     end
 })
 
+-- Gameplay Tab continued: Killer Powers
+
+GameplayTab:CreateSection("Killer Powers")
+
+GameplayTab:CreateButton({
+    Name = "Activate Killer Power",
+    Callback = function()
+        safeCall(function()
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            if remotes then
+                local killerRemotes = remotes:FindFirstChild("Killers")
+                if killerRemotes then
+                    local killerFolder = killerRemotes:FindFirstChild("Killer")
+                    if killerFolder then
+                        local activatePower = killerFolder:FindFirstChild("ActivatePower")
+                        if activatePower then
+                            activatePower:FireServer()
+                            notify("Power Activated", "Killer power triggered", 2)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+})
+
+GameplayTab:CreateButton({
+    Name = "Basic Attack (Killer)",
+    Callback = function()
+        safeCall(function()
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            if remotes then
+                local attacks = remotes:FindFirstChild("Attacks")
+                if attacks then
+                    local basicAttack = attacks:FindFirstChild("BasicAttack")
+                    if basicAttack then
+                        basicAttack:FireServer(false)
+                        notify("Attack", "Basic attack executed", 2)
+                    end
+                end
+            end
+        end)
+    end
+})
+
 -- Settings Tab (trimmed)
 local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 
-SettingsTab:CreateSection("Root Lock")
+-- Movement Section: Walk CFrame
+SettingsTab:CreateSection("Movement")
 
 SettingsTab:CreateToggle({
-    Name = "Lock Root to Current Position",
+    Name = "Walk (CFrame Forward)",
     CurrentValue = false,
-    Flag = "RootLock",
+    Flag = "WalkCFrame",
     Callback = function(Value)
         if Value then
-            -- enableRootLock
-            if RootLockConnection then return end
+            if WalkConnection then return end
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then
-                notify("Root Lock", "No character found to lock", 2)
+                notify("Walk", "No character HumanoidRootPart found", 2)
                 return
             end
-            Config.RootLock.LockedCFrame = hrp.CFrame
-            Config.RootLock.Enabled = true
-
-            RootLockConnection = RunService.Heartbeat:Connect(function()
+            WalkConnection = RunService.Heartbeat:Connect(function(dt)
                 local curHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if not curHRP then return end
-                local locked = Config.RootLock.LockedCFrame
-                if locked then
-                    local target = Vector3.new(locked.Position.X, locked.Position.Y, locked.Position.Z)
-                    local look = locked.LookVector
-                    curHRP.CFrame = CFrame.new(target, target + look)
-                    safeCall(function()
-                        local cam = Workspace.CurrentCamera
-                        if cam and LocalPlayer.Character then
-                            local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                            if humanoid then
-                                cam.CameraType = Enum.CameraType.Custom
-                                cam.CameraSubject = humanoid
-                            end
-                        end
-                    end)
-                end
+                local speed = math.clamp(WalkSpeed or 5, 1, 10)
+                local forward = curHRP.CFrame.LookVector
+                local displacement = forward * (speed * dt)
+                safeCall(function()
+                    curHRP.CFrame = curHRP.CFrame + displacement
+                end)
             end)
-
-            notify("Root Lock", "Locked HRP to current position", 3)
+            notify("Walk", "Walk (CFrame) enabled", 2)
         else
-            -- disableRootLock
-            if RootLockConnection then
-                RootLockConnection:Disconnect()
-                RootLockConnection = nil
+            if WalkConnection then
+                WalkConnection:Disconnect()
+                WalkConnection = nil
             end
-            Config.RootLock.Enabled = false
-            Config.RootLock.LockedCFrame = nil
-            notify("Root Lock", "Released HRP lock", 2)
+            notify("Walk", "Walk (CFrame) disabled", 2)
         end
+    end
+})
+
+SettingsTab:CreateSlider({
+    Name = "Walk Speed (studs/sec)",
+    Range = {1, 10},
+    Increment = 1,
+    CurrentValue = WalkSpeed,
+    Flag = "WalkSpeed",
+    Callback = function(Value)
+        WalkSpeed = math.clamp(Value or 5, 1, 10)
     end
 })
 
@@ -921,11 +833,10 @@ SettingsTab:CreateButton({
             UpdateConnection = nil
         end
         clearAllHighlights()
-        -- stop auto generator thread if running
-        AutoGeneratorThread = nil
-        if RootLockConnection then
-            RootLockConnection:Disconnect()
-            RootLockConnection = nil
+        -- stop walk connection if running
+        if WalkConnection then
+            WalkConnection:Disconnect()
+            WalkConnection = nil
         end
         -- Rayfield fallback: destroy UI if possible
         pcall(function()
@@ -940,45 +851,6 @@ SettingsTab:CreateButton({
         notify("Unloaded", "Script unloaded", 2)
     end
 })
-
--- Auto Generator Loop (keeps auto-complete functionality)
-task.spawn(function()
-    while task.wait(0.2) do
-        if Config.AutoFeatures.AutoGenerator then
-            safeCall(function()
-                local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-                if not remotes then return end
-                
-                local genRemotes = remotes:FindFirstChild("Generator")
-                if not genRemotes then return end
-                
-                local repairEvent = genRemotes:FindFirstChild("RepairEvent")
-                local skillCheckEvent = genRemotes:FindFirstChild("SkillCheckResultEvent")
-                
-                if not repairEvent or not skillCheckEvent then return end
-                
-                local map = Workspace:FindFirstChild("Map")
-                if not map then return end
-                
-                for _, obj in ipairs(map:GetDescendants()) do
-                    if obj:IsA("Model") and obj.Name == "Generator" then
-                        for _, point in ipairs(obj:GetChildren()) do
-                            if point.Name:find("GeneratorPoint") then
-                                pcall(function()
-                                    repairEvent:FireServer(point, true)
-                                    
-                                    local result = Config.AutoFeatures.GeneratorMode == "great" and "success" or "neutral"
-                                    local value = Config.AutoFeatures.GeneratorMode == "great" and 1 or 0
-                                    skillCheckEvent:FireServer(result, value, obj, point)
-                                end)
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-    end
-end)
 
 -- Final Notification
 notify("Script Loaded!", "Violence District v2.2 (modified) loaded", 4)
