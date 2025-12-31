@@ -367,6 +367,15 @@ local FOVTarget = nil
 local FOVSmoothness = 0.25 -- (0.05..1.0) higher = faster interpolation
 local FOVConnection = nil
 
+-- Crosshair (round)
+local CrosshairGui = nil
+local CrosshairFrame = nil
+local CrosshairEnabled = false
+local CrosshairSize = 60 -- diameter in pixels (10..200)
+local CrosshairThickness = 3 -- stroke thickness (1..10)
+local CrosshairColor = Color3.fromRGB(255,255,255) -- white
+local CrosshairDisplayOrder = 999 -- high to keep on top
+
 -- Checkpoints
 local Checkpoints = { nil, nil } -- CFrame or nil
 
@@ -409,6 +418,78 @@ end
 
 local function isSurvivor()
     return LocalPlayer.Team and LocalPlayer.Team.Name == "Survivors"
+end
+
+-- Crosshair functions
+local function createCrosshair()
+    if CrosshairGui and validateInstance(CrosshairGui) then return end
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return end
+
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "NEXTHUB_Crosshair"
+    sg.DisplayOrder = CrosshairDisplayOrder
+    sg.IgnoreGuiInset = true
+    sg.ResetOnSpawn = false
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    sg.Parent = pg
+
+    local frame = Instance.new("Frame")
+    frame.Name = "CrosshairFrame"
+    frame.AnchorPoint = Vector2.new(0.5, 0.5)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    frame.Size = UDim2.new(0, CrosshairSize, 0, CrosshairSize)
+    frame.BackgroundTransparency = 1 -- make inner transparent; stroke will draw ring
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 1000
+    frame.Parent = sg
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0) -- full circle
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Name = "CrosshairStroke"
+    stroke.Thickness = CrosshairThickness
+    stroke.Color = CrosshairColor
+    stroke.Transparency = 0
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.LineJoinMode = Enum.LineJoinMode.Round
+    stroke.Parent = frame
+    stroke.ZIndex = 1001
+
+    CrosshairGui = sg
+    CrosshairFrame = frame
+end
+
+local function updateCrosshair()
+    if not CrosshairGui or not validateInstance(CrosshairGui) then
+        if CrosshairEnabled then
+            createCrosshair()
+        else
+            return
+        end
+    end
+    if CrosshairFrame and validateInstance(CrosshairFrame) then
+        CrosshairFrame.Size = UDim2.new(0, CrosshairSize, 0, CrosshairSize)
+        local stroke = CrosshairFrame:FindFirstChild("CrosshairStroke")
+        if stroke and stroke:IsA("UIStroke") then
+            stroke.Thickness = CrosshairThickness
+            stroke.Color = CrosshairColor
+        end
+        -- Ensure top-most
+        if CrosshairGui then
+            CrosshairGui.DisplayOrder = CrosshairDisplayOrder
+        end
+    end
+end
+
+local function destroyCrosshair()
+    if CrosshairGui and validateInstance(CrosshairGui) then
+        pcall(function() CrosshairGui:Destroy() end)
+    end
+    CrosshairGui = nil
+    CrosshairFrame = nil
 end
 
 -- The following helper will create/destroy Highlight instances directly (inline usage only).
@@ -1082,6 +1163,50 @@ SettingsTab:CreateSlider({
     end
 })
 
+-- Crosshair Section (round ring)
+SettingsTab:CreateSection("Crosshair")
+
+SettingsTab:CreateToggle({
+    Name = "Enable Round Crosshair",
+    CurrentValue = false,
+    Flag = "CrosshairToggle",
+    Callback = function(Value)
+        CrosshairEnabled = Value
+        if Value then
+            createCrosshair()
+            updateCrosshair()
+            notify("Crosshair", "Round crosshair enabled", 2)
+        else
+            destroyCrosshair()
+            notify("Crosshair", "Round crosshair disabled", 2)
+        end
+    end
+})
+
+SettingsTab:CreateSlider({
+    Name = "Crosshair Diameter (px)",
+    Range = {10, 200},
+    Increment = 1,
+    CurrentValue = CrosshairSize,
+    Flag = "CrosshairSize",
+    Callback = function(Value)
+        CrosshairSize = math.clamp(Value or 60, 10, 200)
+        updateCrosshair()
+    end
+})
+
+SettingsTab:CreateSlider({
+    Name = "Crosshair Thickness",
+    Range = {1, 10},
+    Increment = 1,
+    CurrentValue = CrosshairThickness,
+    Flag = "CrosshairThickness",
+    Callback = function(Value)
+        CrosshairThickness = math.clamp(Value or 3, 1, 10)
+        updateCrosshair()
+    end
+})
+
 -- Script Controls: leave only Unload Script here
 SettingsTab:CreateSection("Script Controls")
 
@@ -1123,6 +1248,9 @@ SettingsTab:CreateButton({
             end
         end)
         stopFOVConnection()
+
+        -- destroy crosshair if present
+        destroyCrosshair()
 
         -- Rayfield fallback: destroy UI if possible
         pcall(function()
