@@ -1,9 +1,3 @@
--- Executor Info (mobile support removed)
-local executorName = identifyexecutor and identifyexecutor() or "Unknown"
-
-print("=== Violence District v2.2 (Modified) ===")
-print("Executor: " .. executorName)
-print("============================================")
 
 -- Safe HTTP Get with fallbacks
 local function safeHttpGet(url)
