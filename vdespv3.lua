@@ -343,6 +343,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 -- Configuration (trimmed per request)
 local Config = {
@@ -355,7 +356,8 @@ local Config = {
     },
     AutoFeatures = {
         AutoGenerator = false,
-        GeneratorMode = "great"
+        GeneratorMode = "great",
+        SkillCheck = false
     },
     RootLock = {
         Enabled = false,
@@ -677,10 +679,7 @@ GameplayTab:CreateDropdown({
     end
 })
 
--- Removed Quick Escape (Auto Leave Generator) per request
--- Removed "Leave Generator Now" button per request
--- Removed "Complete All Generators (Instant)" button per request
--- Removed Auto Attack section per request
+-- Gameplay Tab continued: Killer Powers
 
 GameplayTab:CreateSection("Killer Powers")
 
@@ -725,7 +724,124 @@ GameplayTab:CreateButton({
     end
 })
 
--- Teleport tab removed per request (all teleportation features and settings removed)
+-- Skill Check Automation Implementation (inserted from user)
+-- This implementation will be enabled/disabled via the Gameplay tab toggle "Auto Skill Check"
+
+local SkillCheck = {}
+do
+    local LP = LocalPlayer
+    local PG = nil
+    local CheckGui = nil
+    local Check = nil
+    local Line = nil
+    local Goal = nil
+
+    local HeartbeatConn = nil
+    local VisibleConn = nil
+
+    local function PressSpace()
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+            task.wait(0.01)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+        end)
+    end
+
+    local function LineInGoal()
+        if not Line or not Goal then return false end
+        local lr = Line.Rotation % 360
+        local gr = Goal.Rotation % 360
+        local gs = (gr + 104) % 360
+        local ge = (gr + 114) % 360
+
+        if gs > ge then
+            return lr >= gs or lr <= ge
+        else
+            return lr >= gs and lr <= ge
+        end
+    end
+
+    local function HeartbeatCheck()
+        if LP.Team and LP.Team.Name == "Survivors" then
+            if LineInGoal() then
+                PressSpace()
+                if HeartbeatConn then
+                    HeartbeatConn:Disconnect()
+                    HeartbeatConn = nil
+                end
+            end
+        elseif HeartbeatConn then
+            HeartbeatConn:Disconnect()
+            HeartbeatConn = nil
+        end
+    end
+
+    local function OnCheckVisible()
+        if not Check then return end
+        if LP.Team and LP.Team.Name == "Survivors" then
+            if Check.Visible then
+                if HeartbeatConn then HeartbeatConn:Disconnect() end
+                HeartbeatConn = RunService.Heartbeat:Connect(HeartbeatCheck)
+            elseif HeartbeatConn then
+                HeartbeatConn:Disconnect()
+                HeartbeatConn = nil
+            end
+        elseif HeartbeatConn then
+            HeartbeatConn:Disconnect()
+            HeartbeatConn = nil
+        end
+    end
+
+    function SkillCheck:Enable()
+        if Config.AutoFeatures.SkillCheck then return end
+        Config.AutoFeatures.SkillCheck = true
+
+        -- attempt to find GUI components; use pcall in case not present
+        pcall(function()
+            PG = LP:WaitForChild("PlayerGui")
+            CheckGui = PG:FindFirstChild("SkillCheckPromptGui")
+            if CheckGui then
+                Check = CheckGui:FindFirstChild("Check")
+                if Check then
+                    Line = Check:FindFirstChild("Line")
+                    Goal = Check:FindFirstChild("Goal")
+
+                    -- connect visibility watcher
+                    if VisibleConn then VisibleConn:Disconnect() end
+                    VisibleConn = Check:GetPropertyChangedSignal("Visible"):Connect(OnCheckVisible)
+
+                    -- if already visible, start heartbeat
+                    if Check.Visible then
+                        if HeartbeatConn then HeartbeatConn:Disconnect() end
+                        HeartbeatConn = RunService.Heartbeat:Connect(HeartbeatCheck)
+                    end
+                end
+            end
+        end)
+        notify("Skill Check", "Auto Skill Check Enabled", 2)
+    end
+
+    function SkillCheck:Disable()
+        Config.AutoFeatures.SkillCheck = false
+        if HeartbeatConn then HeartbeatConn:Disconnect() HeartbeatConn = nil end
+        if VisibleConn then VisibleConn:Disconnect() VisibleConn = nil end
+        notify("Skill Check", "Auto Skill Check Disabled", 2)
+    end
+end
+
+-- Add Toggle to Gameplay UI
+GameplayTab:CreateToggle({
+    Name = "Auto Skill Check",
+    CurrentValue = false,
+    Flag = "AutoSkillCheck",
+    Callback = function(Value)
+        if Value then
+            SkillCheck:Enable()
+        else
+            SkillCheck:Disable()
+        end
+    end
+})
 
 -- Settings Tab (trimmed)
 local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
