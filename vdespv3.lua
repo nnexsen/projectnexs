@@ -361,6 +361,11 @@ local UpdateConnection = nil
 local WalkConnection = nil
 local WalkSpeed = 25 -- studs per second (10..50)
 
+-- We store original humanoid properties to restore on disable
+local SavedWalkSpeed = nil
+local SavedAutoRotate = nil
+local CharacterAddedConn = nil
+
 -- Helper Functions
 local function notify(title, content, duration)
     local success = pcall(function()
@@ -761,6 +766,25 @@ local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 -- Movement Section: Walk CFrame
 SettingsTab:CreateSection("Movement")
 
+-- Helper to apply running/idle state to humanoid while WalkCFrame is enabled.
+local function applyWalkState(humanoid, isMoving)
+    if not validateInstance(humanoid) then return end
+    -- If moving, set humanoid WalkSpeed so animations and server-side state may pick it up.
+    -- If idle, set WalkSpeed to 0 so default movement doesn't happen; we still try to force running state.
+    pcall(function()
+        if isMoving then
+            humanoid.WalkSpeed = math.clamp(WalkSpeed or 25, 10, 50)
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        else
+            humanoid.WalkSpeed = 0
+            -- try to keep running animation/state when idle (may not always animate)
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        end
+        -- disable AutoRotate while we control HRP orientation
+        humanoid.AutoRotate = false
+    end)
+end
+
 SettingsTab:CreateToggle({
     Name = "Walk (CFrame Forward)",
     CurrentValue = false,
@@ -768,6 +792,27 @@ SettingsTab:CreateToggle({
     Callback = function(Value)
         if Value then
             if WalkConnection then return end
+
+            local function onCharacterAdded(char)
+                -- restore previous saved values if not set, then apply immediate idle running state
+                local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    -- save original properties first time
+                    if SavedWalkSpeed == nil then
+                        SavedWalkSpeed = humanoid.WalkSpeed
+                    end
+                    if SavedAutoRotate == nil then
+                        SavedAutoRotate = humanoid.AutoRotate
+                    end
+                    applyWalkState(humanoid, false)
+                end
+            end
+
+            -- connect to CharacterAdded to reapply settings on respawn
+            if CharacterAddedConn then CharacterAddedConn:Disconnect() CharacterAddedConn = nil end
+            CharacterAddedConn = LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+            -- if character already exists, apply immediately
+            onCharacterAdded(LocalPlayer.Character)
 
             WalkConnection = RunService.Heartbeat:Connect(function(dt)
                 local char = LocalPlayer.Character
@@ -781,9 +826,13 @@ SettingsTab:CreateToggle({
                 -- Flatten to XZ plane (no vertical movement)
                 local moveXZ = Vector3.new(moveDir.X, 0, moveDir.Z)
                 if moveXZ.Magnitude <= 0.01 then
-                    -- no input -> remain stationary
+                    -- no input -> remain stationary but keep running state/animation
+                    applyWalkState(humanoid, false)
                     return
                 end
+
+                -- input present -> set humanoid to running with chosen WalkSpeed and move via CFrame
+                applyWalkState(humanoid, true)
 
                 local speed = math.clamp(WalkSpeed or 25, 10, 50)
                 local dir = moveXZ.Unit
@@ -795,13 +844,35 @@ SettingsTab:CreateToggle({
                     curHRP.CFrame = CFrame.new(targetPos, targetPos + dir)
                 end)
             end)
-            notify("Walk", "Walk (CFrame) enabled — press movement keys or use joystick to move", 3)
+            notify("Walk", "Walk (CFrame) enabled — character will show running state and move when you provide input", 4)
         else
+            -- disable: disconnect heartbeat, restore humanoid properties
             if WalkConnection then
                 WalkConnection:Disconnect()
                 WalkConnection = nil
             end
-            notify("Walk", "Walk (CFrame) disabled", 2)
+            if CharacterAddedConn then
+                CharacterAddedConn:Disconnect()
+                CharacterAddedConn = nil
+            end
+
+            -- restore humanoid properties on current character if possible
+            local char = LocalPlayer.Character
+            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                pcall(function()
+                    if SavedWalkSpeed ~= nil then humanoid.WalkSpeed = SavedWalkSpeed end
+                    if SavedAutoRotate ~= nil then humanoid.AutoRotate = SavedAutoRotate end
+                    -- try to reset state to getting up/land (let engine pick correct state)
+                    humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+                end)
+            end
+
+            -- clear saved values
+            SavedWalkSpeed = nil
+            SavedAutoRotate = nil
+
+            notify("Walk", "Walk (CFrame) disabled — controls restored", 2)
         end
     end
 })
@@ -850,6 +921,22 @@ SettingsTab:CreateButton({
             WalkConnection:Disconnect()
             WalkConnection = nil
         end
+        if CharacterAddedConn then
+            CharacterAddedConn:Disconnect()
+            CharacterAddedConn = nil
+        end
+        -- try restore humanoid on unload
+        local char = LocalPlayer.Character
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            pcall(function()
+                if SavedWalkSpeed ~= nil then humanoid.WalkSpeed = SavedWalkSpeed end
+                if SavedAutoRotate ~= nil then humanoid.AutoRotate = SavedAutoRotate end
+            end)
+        end
+        SavedWalkSpeed = nil
+        SavedAutoRotate = nil
+
         -- Rayfield fallback: destroy UI if possible
         pcall(function()
             if Rayfield and Rayfield.Destroy then
