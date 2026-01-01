@@ -41,7 +41,28 @@ local function safeHttpGet(url)
     error("Failed to load URL: " .. url)
 end
 
--- Load Rayfield with fallback
+-- Services (moved early so UI/fallback code that references LocalPlayer won't nil-index)
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+-- Ensure LocalPlayer available (Solara and similar executors may need a short wait)
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    local start = tick()
+    repeat
+        task.wait(0.05)
+        LocalPlayer = Players.LocalPlayer
+    until LocalPlayer or tick() - start > 5
+end
+if not LocalPlayer then
+    error("LocalPlayer not found — run as a client (LocalScript) or use a client executor.")
+end
+
+-- Load Rayfield with fallback (defensive)
 local Rayfield
 local loadSuccess, loadError = pcall(function()
     Rayfield = loadstring(safeHttpGet('https://sirius.menu/rayfield'))()
@@ -137,7 +158,7 @@ if not Rayfield then
         local screenGui = Instance.new("ScreenGui")
         screenGui.Name = "VD_FallbackUI"
         screenGui.ResetOnSpawn = false
-        screenGui.Parent = LocalPlayer:FindFirstChild("PlayerGui") or nil
+        screenGui.Parent = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
 
         local main = Instance.new("Frame")
         main.Size = UDim2.new(0, 420, 0, 520)
@@ -329,15 +350,24 @@ if not Rayfield then
     end
 end
 
--- Services
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
-local VirtualInputManager = game:GetService("VirtualInputManager")
+-- Defensive notify function: check Rayfield.Notify exists and is callable before calling
+local function notify(title, content, duration)
+    if Rayfield and type(Rayfield.Notify) == "function" then
+        pcall(function()
+            Rayfield:Notify({
+                Title = title,
+                Content = content,
+                Duration = duration or 3,
+                Image = 4483362458
+            })
+        end)
+    else
+        -- fallback: print/warn to console so we don't attempt to call a nil function
+        warn(string.format("[%s] %s", title or "Notify", content or ""))
+    end
+end
 
+-- The rest of the script continues (defensive coding applied where appropriate)
 -- Configuration (trimmed per request)
 local Config = {
     ESP = {
@@ -388,25 +418,7 @@ local CrosshairDisplayOrder = 999 -- high to keep on top
 -- Checkpoints
 local Checkpoints = { nil, nil } -- CFrame or nil
 
--- We store original humanoid properties to restore on disable
--- SavedWalkSpeed defined above
-
 -- Helper Functions
-local function notify(title, content, duration)
-    local success = pcall(function()
-        Rayfield:Notify({
-            Title = title,
-            Content = content,
-            Duration = duration or 3,
-            Image = 4483362458
-        })
-    end)
-    
-    if not success then
-        warn(string.format("[%s] %s", title, content))
-    end
-end
-
 local function safeCall(func, ...)
     local success, result = pcall(func, ...)
     if not success then
@@ -622,22 +634,63 @@ if not UpdateConnection then
 end
 
 -- Create Rayfield Window (title changed to NEXTHUB BY NNEXT; subtitle by Nnext)
-local Window = Rayfield:CreateWindow({
-    Name = "NEXTHUB BY NNEXT",
-    LoadingTitle = "Loading Script",
-    LoadingSubtitle = "by Nnext",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = nil,
-        FileName = "ViolenceDistrictConfig"
-    },
-    Discord = {
-        Enabled = false,
-        Invite = "CnNqEVFxh6",
-        RememberJoins = false
-    },
-    KeySystem = false
-})
+local Window
+local okWindow, wndOrErr = pcall(function()
+    if Rayfield and type(Rayfield.CreateWindow) == "function" then
+        return Rayfield:CreateWindow({
+            Name = "NEXTHUB BY NNEXT",
+            LoadingTitle = "Loading Script",
+            LoadingSubtitle = "by Nnext",
+            ConfigurationSaving = {
+                Enabled = true,
+                FolderName = nil,
+                FileName = "ViolenceDistrictConfig"
+            },
+            Discord = {
+                Enabled = false,
+                Invite = "CnNqEVFxh6",
+                RememberJoins = false
+            },
+            KeySystem = false
+        })
+    else
+        error("Rayfield.CreateWindow unavailable")
+    end
+end)
+
+if okWindow and wndOrErr then
+    Window = wndOrErr
+else
+    warn("Rayfield window creation failed:", tostring(wndOrErr))
+    -- If our fallback Rayfield is present it should have CreateWindow; attempt again defensively
+    if Rayfield and type(Rayfield.CreateWindow) == "function" then
+        local ok2, w2 = pcall(function()
+            return Rayfield:CreateWindow({
+                Name = "NEXTHUB BY NNEXT",
+                LoadingTitle = "Loading Script",
+                LoadingSubtitle = "by Nnext",
+                ConfigurationSaving = {
+                    Enabled = true,
+                    FolderName = nil,
+                    FileName = "ViolenceDistrictConfig"
+                },
+                Discord = {
+                    Enabled = false,
+                    Invite = "CnNqEVFxh6",
+                    RememberJoins = false
+                },
+                KeySystem = false
+            })
+        end)
+        if ok2 and w2 then
+            Window = w2
+        else
+            error("Could not create UI window; aborting: "..tostring(w2))
+        end
+    else
+        error("No UI library available to create window")
+    end
+end
 
 -- ESP Tab (streamlined: only Player ESP and Generator ESP remain; labels removed)
 local ESPTab = Window:CreateTab("👁️ ESP", 4483362458)
@@ -936,7 +989,9 @@ local function applySpeedToHumanoid(humanoid)
         local newSpeed = math.clamp(base * multiplier, 0, 1000)
         -- set attribute "Speed" on humanoid (some games read attributes)
         pcall(function()
-            humanoid:SetAttribute("Speed", newSpeed)
+            if humanoid.SetAttribute then
+                humanoid:SetAttribute("Speed", newSpeed)
+            end
         end)
         -- also apply locally so movement reacts immediately
         humanoid.WalkSpeed = newSpeed
@@ -947,8 +1002,8 @@ end
 local function removeSpeedAttributeFromHumanoid(humanoid)
     if not validateInstance(humanoid) then return end
     pcall(function()
-        -- try remove attribute; if RemoveAttribute not available, set to nil
-        if humanoid:GetAttribute("Speed") ~= nil then
+        -- try remove attribute; set to nil if possible
+        if humanoid.GetAttribute and humanoid:GetAttribute("Speed") ~= nil then
             pcall(function()
                 humanoid:SetAttribute("Speed", nil)
             end)
@@ -1260,7 +1315,7 @@ SettingsTab:CreateButton({
                 if SavedWalkSpeed ~= nil then humanoid.WalkSpeed = SavedWalkSpeed end
                 if SavedAutoRotate ~= nil then humanoid.AutoRotate = SavedAutoRotate end
                 -- remove attribute if present
-                if humanoid:GetAttribute and humanoid:GetAttribute("Speed") ~= nil then
+                if humanoid.GetAttribute and humanoid:GetAttribute("Speed") ~= nil then
                     pcall(function() humanoid:SetAttribute("Speed", nil) end)
                 end
             end)
@@ -1283,7 +1338,7 @@ SettingsTab:CreateButton({
         -- Rayfield fallback: destroy UI if possible
         pcall(function()
             if Rayfield and Rayfield.Destroy then
-                Rayfield:Destroy()
+                pcall(Rayfield.Destroy, Rayfield)
             elseif Rayfield and Rayfield._Gui then
                 if validateInstance(Rayfield._Gui) then
                     Rayfield._Gui:Destroy()
