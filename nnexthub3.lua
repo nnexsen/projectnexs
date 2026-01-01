@@ -357,9 +357,18 @@ local Highlights = {}            -- mapping Instance -> Highlight
 local LastUpdate = 0
 local UpdateConnection = nil
 
--- Movement (Walk CFrame)
+-- Movement (Walk CFrame) -- repurposed to Speed Attribute
 local WalkConnection = nil
-local WalkSpeed = 25 -- studs per second (10..50)
+local WalkSpeed = 25 -- studs per second (10..50) - used as base speed when calculating attribute
+local SavedWalkSpeed = nil
+local SavedAutoRotate = nil
+local CharacterAddedConn = nil
+
+-- Speed Attribute feature variables
+local SpeedAttrEnabled = false
+local SpeedBoostPercent = 50 -- default percent boost (50% more)
+-- Helper to track current applied humanoid (for restoring)
+local AppliedHumanoid = nil
 
 -- FOV & Camera
 local OriginalCameraFOV = nil
@@ -380,9 +389,7 @@ local CrosshairDisplayOrder = 999 -- high to keep on top
 local Checkpoints = { nil, nil } -- CFrame or nil
 
 -- We store original humanoid properties to restore on disable
-local SavedWalkSpeed = nil
-local SavedAutoRotate = nil
-local CharacterAddedConn = nil
+-- SavedWalkSpeed defined above
 
 -- Helper Functions
 local function notify(title, content, duration)
@@ -913,134 +920,93 @@ GameplayTab:CreateButton({
     end
 })
 
--- Movement Section (moved to Gameplay): Walk CFrame
+-- Movement Section (repurposed): Speed Attribute
 GameplayTab:CreateSection("Movement")
 
--- Helper to apply running/idle state to humanoid while WalkCFrame is enabled.
-local function applyWalkState(humanoid, isMoving)
+-- Helper to apply speed attribute to humanoid
+local function applySpeedToHumanoid(humanoid)
     if not validateInstance(humanoid) then return end
     pcall(function()
-        if isMoving then
-            humanoid.WalkSpeed = math.clamp(WalkSpeed or 25, 10, 50)
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        else
-            humanoid.WalkSpeed = 0
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        if SavedWalkSpeed == nil then
+            SavedWalkSpeed = humanoid.WalkSpeed
         end
-        humanoid.AutoRotate = false
+        -- base speed: prefer configured WalkSpeed else humanoid current/wrapped saved
+        local base = WalkSpeed or SavedWalkSpeed or humanoid.WalkSpeed
+        local multiplier = 1 + ( (SpeedBoostPercent or 0) / 100 )
+        local newSpeed = math.clamp(base * multiplier, 0, 1000)
+        -- set attribute "Speed" on humanoid (some games read attributes)
+        pcall(function()
+            humanoid:SetAttribute("Speed", newSpeed)
+        end)
+        -- also apply locally so movement reacts immediately
+        humanoid.WalkSpeed = newSpeed
+        AppliedHumanoid = humanoid
+    end)
+end
+
+local function removeSpeedAttributeFromHumanoid(humanoid)
+    if not validateInstance(humanoid) then return end
+    pcall(function()
+        -- try remove attribute; if RemoveAttribute not available, set to nil
+        if humanoid:GetAttribute("Speed") ~= nil then
+            pcall(function()
+                humanoid:SetAttribute("Speed", nil)
+            end)
+        end
+        -- restore WalkSpeed if saved
+        if SavedWalkSpeed ~= nil then
+            humanoid.WalkSpeed = SavedWalkSpeed
+        end
     end)
 end
 
 GameplayTab:CreateToggle({
-    Name = "Walk (CFrame Forward)",
+    Name = "Use Speed Attribute",
     CurrentValue = false,
-    Flag = "WalkCFrame",
+    Flag = "SpeedAttribute",
     Callback = function(Value)
         if Value then
-            if WalkConnection then return end
+            if SpeedAttrEnabled then return end
+            SpeedAttrEnabled = true
 
-            local function onCharacterAdded(char)
+            -- connect to character added to reapply attribute on respawn
+            if CharacterAddedConn then CharacterAddedConn:Disconnect() CharacterAddedConn = nil end
+            CharacterAddedConn = LocalPlayer.CharacterAdded:Connect(function(char)
+                task.wait(0.05)
                 local humanoid = char and char:FindFirstChildOfClass("Humanoid")
                 if humanoid then
-                    if SavedWalkSpeed == nil then
-                        SavedWalkSpeed = humanoid.WalkSpeed
-                    end
-                    if SavedAutoRotate == nil then
-                        SavedAutoRotate = humanoid.AutoRotate
-                    end
-                    applyWalkState(humanoid, false)
+                    applySpeedToHumanoid(humanoid)
                 end
-            end
-
-            if CharacterAddedConn then CharacterAddedConn:Disconnect() CharacterAddedConn = nil end
-            CharacterAddedConn = LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
-            onCharacterAdded(LocalPlayer.Character)
-
-            -- New: simulate Shift on PC so in-game requires-hold-Shift sprint also activates
-            local ShiftHeld = false
-            local function setShiftState(hold)
-                if hold == ShiftHeld then return end
-                ShiftHeld = hold
-                -- don't try to simulate Shift on touch devices (mobile)
-                if UserInputService.TouchEnabled then return end
-                if VirtualInputManager and VirtualInputManager.SendKeyEvent then
-                    pcall(function()
-                        VirtualInputManager:SendKeyEvent(hold, Enum.KeyCode.LeftShift, false, game)
-                    end)
-                end
-            end
-
-            WalkConnection = RunService.Heartbeat:Connect(function(dt)
-                local char = LocalPlayer.Character
-                local curHRP = char and char:FindFirstChild("HumanoidRootPart")
-                local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-
-                if not curHRP or not humanoid then
-                    setShiftState(false)
-                    return
-                end
-
-                -- Use Humanoid.MoveDirection so movement only occurs when player provides input
-                local moveDir = humanoid.MoveDirection or Vector3.new(0,0,0)
-                -- Flatten to XZ plane (no vertical movement)
-                local moveXZ = Vector3.new(moveDir.X, 0, moveDir.Z)
-                if moveXZ.Magnitude <= 0.01 then
-                    -- no input -> remain stationary but keep running state/animation
-                    applyWalkState(humanoid, false)
-                    setShiftState(false)
-                    return
-                end
-
-                -- input present -> set humanoid to running with chosen WalkSpeed and move via CFrame
-                applyWalkState(humanoid, true)
-                setShiftState(true)
-
-                local speed = math.clamp(WalkSpeed or 25, 10, 50)
-                local dir = moveXZ.Unit
-                local displacement = dir * (speed * dt)
-
-                safeCall(function()
-                    local targetPos = curHRP.Position + displacement
-                    -- set CFrame while preserving orientation towards movement direction
-                    curHRP.CFrame = CFrame.new(targetPos, targetPos + dir)
-                end)
             end)
-            notify("Walk", "Walk (CFrame) enabled — character will show running state and move when you provide input", 4)
-        else
-            -- disable: disconnect heartbeat, restore humanoid properties
-            if WalkConnection then
-                WalkConnection:Disconnect()
-                WalkConnection = nil
+
+            -- apply to current character immediately if present
+            local char = LocalPlayer.Character
+            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                applySpeedToHumanoid(humanoid)
+            else
+                notify("Speed Attribute", "No humanoid found to apply speed attribute", 3)
             end
+
+            notify("Speed Attribute", "Enabled — attribute 'Speed' set on humanoid (if supported)", 3)
+        else
+            -- disable
+            SpeedAttrEnabled = false
             if CharacterAddedConn then
                 CharacterAddedConn:Disconnect()
                 CharacterAddedConn = nil
             end
-
-            -- restore humanoid properties on current character if possible
+            -- restore current humanoid if tracked
             local char = LocalPlayer.Character
             local humanoid = char and char:FindFirstChildOfClass("Humanoid")
             if humanoid then
-                pcall(function()
-                    if SavedWalkSpeed ~= nil then humanoid.WalkSpeed = SavedWalkSpeed end
-                    if SavedAutoRotate ~= nil then humanoid.AutoRotate = SavedAutoRotate end
-                    humanoid:ChangeState(Enum.HumanoidStateType.Landed)
-                end)
+                removeSpeedAttributeFromHumanoid(humanoid)
+            elseif AppliedHumanoid and validateInstance(AppliedHumanoid) then
+                removeSpeedAttributeFromHumanoid(AppliedHumanoid)
             end
-
+            AppliedHumanoid = nil
             SavedWalkSpeed = nil
-            SavedAutoRotate = nil
-
-            -- ensure we release simulated shift if any
-            pcall(function()
-                if not UserInputService.TouchEnabled and VirtualInputManager and VirtualInputManager.SendKeyEvent then
-                    pcall(function()
-                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.LeftShift, false, game)
-                    end)
-                end
-            end)
-
-            notify("Walk", "Walk (CFrame) disabled — controls restored", 2)
+            notify("Speed Attribute", "Disabled — restored WalkSpeed where possible", 2)
         end
     end
 })
@@ -1053,6 +1019,36 @@ GameplayTab:CreateSlider({
     Flag = "WalkSpeed",
     Callback = function(Value)
         WalkSpeed = math.clamp(Value or 25, 10, 50)
+        -- if speed attribute enabled, update current humanoid live
+        if SpeedAttrEnabled then
+            local char = LocalPlayer.Character
+            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                applySpeedToHumanoid(humanoid)
+            end
+        end
+    end
+})
+
+-- New: Speed Boost percent slider (applies as multiplier)
+GameplayTab:CreateSlider({
+    Name = "Speed Boost (%)",
+    Range = {0, 200},
+    Increment = 1,
+    CurrentValue = SpeedBoostPercent,
+    Flag = "SpeedBoostPercent",
+    Callback = function(Value)
+        SpeedBoostPercent = math.clamp(Value or 50, 0, 200)
+        -- if enabled, update immediately
+        if SpeedAttrEnabled then
+            local char = LocalPlayer.Character
+            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                applySpeedToHumanoid(humanoid)
+            elseif AppliedHumanoid and validateInstance(AppliedHumanoid) then
+                applySpeedToHumanoid(AppliedHumanoid)
+            end
+        end
     end
 })
 
@@ -1263,6 +1259,10 @@ SettingsTab:CreateButton({
             pcall(function()
                 if SavedWalkSpeed ~= nil then humanoid.WalkSpeed = SavedWalkSpeed end
                 if SavedAutoRotate ~= nil then humanoid.AutoRotate = SavedAutoRotate end
+                -- remove attribute if present
+                if humanoid:GetAttribute and humanoid:GetAttribute("Speed") ~= nil then
+                    pcall(function() humanoid:SetAttribute("Speed", nil) end)
+                end
             end)
         end
         SavedWalkSpeed = nil
